@@ -170,10 +170,24 @@ Upstream: куратор вручну компілює довідковий ко
 - Vector DB: Chroma vs FAISS vs Qdrant 
 
 ### Experiment results
-...
+Реалізовано й виміряно поки що лише Intent Classifier (кроки 2–4 плану, розділ 7.4); Retrieval і Generation ще не збудовані, тож Recall@k/MRR і оцінка згенерованих тлумачень попереду.
+
+##### Vectorizer/model sweep (ручний, 5-fold CV, seed-датасет 120 рядків)
+<img width="889" height="213" alt="Screenshot 2026-08-31 at 00 48 50" src="https://github.com/user-attachments/assets/b3c0c713-2aab-431a-86bb-95d3494da10a" />
+
+##### Автоматизований grid search (крок 5.3, всередині Airflow ml_pipeline)
+16 комбінацій (ngram_range × C) × 5-fold CV. Найкраща: ngram_range=(2,5), C=10, CV macro-F1 = 0.615 — краще за ручний вибір на крос-валідації.
+
+##### Champion vs challenger, реальний прогін evaluation gate
+- v2 (champion - ngram (2,4), C=3) — ручний вибір	accuracy = 0.690;	macro_f1 = 0.680,	лишився champion
+- v3 (tuned - ngram (2,5), C=10) — з grid search	accuracy = 0.593;	macro_f1= 0.581,	challenger (не промоутнуто)
+Незважаючи на кращий crossval-результат (0.615), v3 програла на конкретному 80/20 тестовому поділі, очікувано на такому маленькому датасеті (141 рядок)-> `register_and_evaluate()` чесно порівняв метрики і НЕ промоутнув гіршу модель, evaluation gate працює за призначенням, а не завжди відповідає так.
 
 ### Performance benchmarks
-Планується виміряти latency vs розмір LLM-моделі (напр. Mistral 7B проти квантованої 4-біт версії) та throughput vs кількість одночасних запитів після інтеграції сервісів.
+Те, що вже реально працює:
+- predict latency, p50	2.7 ms	1 репліка api, локально, 30 запитів
+- predict latency, p95	6.3 ms	та сама вибірка — з великим запасом проти цілі <3.5с з розділу 4
+- Розподіл запитів між репліками	3 / 4 / 5	12 запитів /health, --scale api=3, через nginx підтверджено round-robin
 
 ### Milestones & Timeline
 1) Design doc. Постановка задачі, архітектура, методологія — цей документ.
