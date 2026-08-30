@@ -1,4 +1,4 @@
-#One-off: publish the local seed CSV as version "v0-seed" of the intent dataset in MinIO
+#One-off: publish the local seed CSV as version v0-seed of the intent dataset in MinIO
 import csv
 import os
 

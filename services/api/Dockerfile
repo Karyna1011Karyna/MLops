@@ -1,5 +1,3 @@
-# Build context is the repo root (tarotrag/), not this directory —
-# see docker-compose.yml's `build.context: .` for this service.
 FROM python:3.11-slim
 
 WORKDIR /srv

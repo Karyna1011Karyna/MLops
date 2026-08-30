@@ -1,21 +1,5 @@
-"""TarotRAG Intent Classifier API.
+#TarotRAG Intent Classifier API
 
-This is the "Intent Classifier Service" from the design doc, wrapped as a
-FastAPI app. Models are served straight from the MLflow Model Registry
-using a champion/challenger scheme:
-
-  - `champion`   — the model version that answers most traffic.
-  - `challenger` — an optional newer candidate version. If one exists, a
-    small slice of traffic (CHALLENGER_TRAFFIC_PCT %) is routed to it so
-    its real-world behaviour can be compared against the champion's before
-    anyone commits to promoting it (see scripts/promote_challenger.py).
-
-The process holds no other state, which is what makes it horizontally
-scalable: run any number of replicas behind the nginx load balancer
-(`docker compose up -d --scale api=3`) and each one independently keeps
-itself in sync with the registry via a background refresh loop — no
-coordination between replicas needed, no sticky sessions, nothing to shard.
-"""
 import asyncio
 import logging
 import os
@@ -63,7 +47,7 @@ MODEL_STATE = {
 
 
 def _load_alias(alias: str):
-    """Returns (pipeline, version) for a registry alias, or (None, None) if unset."""
+    #Returns (pipeline, version) for a registry alias or (None, None)
     try:
         client = MlflowClient()
         mv = client.get_model_version_by_alias(MODEL_NAME, alias)
@@ -74,10 +58,7 @@ def _load_alias(alias: str):
 
 
 def _bootstrap_if_empty():
-    """First-ever run of the whole system: nothing is registered yet, so
-    train a baseline from whatever training dataset is available and
-    register it as the champion directly (no challenger step needed —
-    there's nothing to compare it against)."""
+    #First-ever run of the whole system
     logger.warning("No champion registered yet — training a bootstrap baseline.")
     df, dataset_version = load_dataset_from_minio()
     if df is None:
@@ -124,7 +105,7 @@ async def startup():
         try:
             await asyncio.to_thread(_refresh_models)
             break
-        except Exception as exc:  # noqa: BLE001 - retry on any startup failure (MLflow/MinIO not ready yet)
+        except Exception as exc:
             last_error = exc
             logger.warning("Model bootstrap attempt %s/10 failed: %s", attempt, exc)
             time.sleep(3)
@@ -147,10 +128,8 @@ def health():
 
 @app.post("/admin/reload-models")
 def reload_models():
-    """Force-refresh champion/challenger from the registry right now,
-    instead of waiting for the next background tick. Useful right after
-    running scripts/promote_challenger.py if you don't want to wait."""
-    _refresh_models()
+    #Force-refresh champion/challenger from the registry right now,
+
     return {
         "champion_version": MODEL_STATE["champion_version"],
         "challenger_version": MODEL_STATE["challenger_version"],
@@ -185,11 +164,6 @@ def predict(payload: PredictRequest):
 
 @app.post("/feedback", response_model=FeedbackResponse)
 def feedback(payload: FeedbackRequest):
-    """Record a confirmed (question, label) pair as new training data.
-
-    This is the entry point that feeds the Airflow `sync_training_data` DAG:
-    rows land here in Postgres first, then get moved into the versioned
-    MinIO dataset in batch.
-    """
+    #Record a confirmed (question, label) pair as new training data
     example_id = db.insert_training_example(payload.question, payload.label, source="api_feedback")
     return FeedbackResponse(id=example_id, status="stored")

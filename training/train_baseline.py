@@ -1,34 +1,5 @@
-"""Train the TarotRAG intent-classifier baseline: TF-IDF + Logistic Regression.
+#Train the TarotRAG intent-classifier baseline: TF-IDF + Logistic Regression.
 
-This is the "main ML component" from the design doc — a small, fast,
-fully-interpretable baseline. It is intentionally NOT a transformer: a
-baseline should be the simplest thing that could possibly work, so later
-improvements (e.g. a fine-tuned DistilBERT) have something honest to beat.
-
-Full pipeline, step by step (also wired up as the Airflow DAG `ml_pipeline`):
-    1. load_dataset_from_minio / load_local_seed  — data gathering
-    2. preprocess_dataset                          — data processing
-    3. tune_hyperparameters (optional, --tune)      — parameter tuning
-    4. train                                        — model training
-    5. log_run                                      — always-on MLflow tracking
-    6. register_and_evaluate (--register)           — registry + auto champion/challenger
-
-Every run is tracked in MLflow (params, metrics, the classification report,
-the model artifact itself — stored in MinIO via MLflow's S3 artifact
-store). Only runs started with --register also get registered as a new
-version of the `tarot-intent-classifier` model and evaluated against the
-current champion:
-
-    - no "champion" alias exists yet        -> this version BECOMES the champion
-      (first-ever model, nothing to compare it against)
-    - a champion exists, new macro_f1 higher -> AUTOMATICALLY promoted to champion
-    - a champion exists, new macro_f1 lower  -> stays a "challenger", visible in the
-      registry for inspection, but does not receive production traffic
-
-Usage:
-    python training/train_baseline.py --source minio --tune --register
-    python training/train_baseline.py --source local              # just track, don't deploy
-"""
 import argparse
 import json
 import os
@@ -51,14 +22,12 @@ EXPERIMENT_NAME = "tarot-intent-classifier"
 MODEL_NAME = os.environ.get("MLFLOW_MODEL_NAME", "tarot-intent-classifier")
 PROMOTION_METRIC = "macro_f1"
 
-# Defaults used when --tune is NOT passed — picked by hand via an earlier
-# 5-fold CV sweep (see git history / the design doc for that experiment).
+# Defaults used when tune is NOT passed
+# 5-fold CV sweep
 VECTORIZER_PARAMS = dict(analyzer="char_wb", ngram_range=(2, 4), min_df=1, sublinear_tf=True)
 CLASSIFIER_PARAMS = dict(max_iter=2000, class_weight="balanced", C=3)
 
-# Search space for --tune: small on purpose — this dataset is a few hundred
-# rows, so an exhaustive grid over a handful of options is instant and
-# already covers the range worth trying by hand.
+# Search space
 PARAM_GRID = {
     "tfidf__ngram_range": [(2, 3), (2, 4), (2, 5), (3, 5)],
     "clf__C": [1, 3, 5, 10],
@@ -66,7 +35,7 @@ PARAM_GRID = {
 
 
 def load_dataset_from_minio():
-    """Returns (DataFrame, version) or (None, None) if nothing has been published yet."""
+    #Returns (DataFrame, version) or (None, None) if nothing has been published
     rows, version = storage.read_dataset()
     if rows is None:
         return None, None
@@ -78,9 +47,7 @@ def load_local_seed() -> pd.DataFrame:
 
 
 def preprocess_dataset(df: pd.DataFrame) -> pd.DataFrame:
-    """Data-processing step: drop empty/malformed rows and exact duplicates
-    (the dataset only ever grows via appends from Postgres, so duplicates
-    from a re-run or a repeated piece of feedback are expected)."""
+    #Data-processing
     before = len(df)
 
     df = df.dropna(subset=["question", "label"]).copy()
@@ -97,10 +64,7 @@ def preprocess_dataset(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def build_pipeline(vectorizer_params: dict = None, classifier_params: dict = None) -> Pipeline:
-    # Character n-grams (rather than word n-grams) handle Ukrainian's rich
-    # inflection much better on a small dataset: "стосунків"/"стосунки"/
-    # "стосунках" share substrings a word-level vectorizer would treat as
-    # unrelated tokens.
+    # Character n-grams
     return Pipeline([
         ("tfidf", TfidfVectorizer(**(vectorizer_params or VECTORIZER_PARAMS))),
         ("clf", LogisticRegression(**(classifier_params or CLASSIFIER_PARAMS))),
@@ -108,10 +72,7 @@ def build_pipeline(vectorizer_params: dict = None, classifier_params: dict = Non
 
 
 def tune_hyperparameters(df: pd.DataFrame) -> dict:
-    """Parameter-tuning step: small grid search over vectorizer n-gram range
-    and classifier regularization strength, scored by 5-fold CV macro-F1.
-    Returns the best vectorizer/classifier params plus the CV score, ready
-    to hand straight to train()."""
+    #Parameter-tuning step
     base_pipeline = Pipeline([
         ("tfidf", TfidfVectorizer(analyzer="char_wb", min_df=1, sublinear_tf=True)),
         ("clf", LogisticRegression(max_iter=2000, class_weight="balanced")),
@@ -168,8 +129,7 @@ def _has_alias(client: MlflowClient, alias: str) -> bool:
 
 
 def _champion_metric(client: MlflowClient, metric_name: str):
-    """Returns (champion_version, champion_metric_value) or (None, None) if
-    no champion is registered yet."""
+    #Returns (champion_version, champion_metric_value) or (None, None)
     try:
         champion = client.get_model_version_by_alias(MODEL_NAME, "champion")
     except MlflowException:
@@ -181,8 +141,7 @@ def _champion_metric(client: MlflowClient, metric_name: str):
 def log_run(pipeline: Pipeline, metrics: dict, report: str, dataset_version: str,
             df: pd.DataFrame, run_name: str, vectorizer_params: dict = None,
             classifier_params: dict = None, extra_params: dict = None) -> str:
-    """Always-on MLflow tracking: params, metrics, the report, and the model
-    artifact (uploaded to MinIO under the hood). Returns the MLflow run_id."""
+    #Always-on MLflow tracking: params, metrics, the report, and the model artifact
     with mlflow.start_run(run_name=run_name) as run:
         mlflow.log_param("dataset_version", dataset_version)
         mlflow.log_param("n_examples", len(df))
@@ -197,13 +156,8 @@ def log_run(pipeline: Pipeline, metrics: dict, report: str, dataset_version: str
 
 
 def register_and_evaluate(run_id: str, new_metrics: dict, metric_name: str = PROMOTION_METRIC) -> tuple:
-    """Register the model logged in `run_id` as a new version of MODEL_NAME,
-    then decide its role automatically by comparing `metric_name` against
-    the current champion's own logged value for that same metric — this is
-    the pipeline's evaluation gate, not a human eyeballing the MLflow UI.
-
-    Returns (version, role_description, was_promoted).
-    """
+    #Register the model logged in run_id as a new version of MODEL_NAME
+    #Returns (version, role_description, was_promoted).
     client = MlflowClient()
     model_uri = f"runs:/{run_id}/model"
     model_version = mlflow.register_model(model_uri, MODEL_NAME)

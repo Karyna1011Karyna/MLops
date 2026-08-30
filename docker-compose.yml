@@ -1,6 +1,6 @@
 services:
 
-  # ---------------------------------------------------------------- storage --
+  #  storage
   postgres:
     image: postgres:16-alpine
     environment:
@@ -36,7 +36,7 @@ services:
       timeout: 5s
       retries: 10
 
-  # one-shot: create the buckets we need, then exit
+  # one-shot: create the buckets needed then exit
   minio-init:
     image: minio/mc:latest
     depends_on:
@@ -68,10 +68,10 @@ services:
       minio-init:
         condition: service_completed_successfully
 
-  # ---------------------------------------------------------------- mlflow --
-  # Tracking server + model registry. Backend store = Postgres (a separate
-  # `mlflow` database, created by scripts/init_mlflow_db.sh), artifact
-  # store = MinIO (bucket `mlflow-artifacts`, via the S3 API).
+  # mlflow
+  # Tracking server + model registry
+  #Backend store = Postgres (a separate mlflow database created by scripts/init_mlflow_db.sh)
+  #artifact in store = MinIO (bucket `mlflow-artifacts`, via the S3 API).
   mlflow:
     build:
       context: services/mlflow
@@ -96,7 +96,7 @@ services:
       retries: 15
       start_period: 15s
 
-  # ------------------------------------------------------------------- api --
+  # api
   api:
     build:
       context: .
@@ -104,7 +104,7 @@ services:
     image: tarotrag-api:latest
     env_file: .env
     expose:
-      - "8000"   # only reachable inside the docker network — nginx is the public entrypoint
+      - "8000"
     depends_on:
       dataset-init:
         condition: service_completed_successfully
@@ -114,11 +114,7 @@ services:
         condition: service_healthy
       mlflow:
         condition: service_healthy
-    # no `ports:` here on purpose — with --scale api=N, N containers can't all
-    # bind the same host port. nginx (below) is what's published on 8000.
 
-  # nginx load-balances across however many `api` replicas are running —
-  # this is what makes `docker compose up -d --scale api=3` actually work.
   nginx:
     image: nginx:alpine
     volumes:
@@ -128,7 +124,7 @@ services:
     depends_on:
       - api
 
-  # ------------------------------------------------------- manual tooling --
+  # - manual tooling
   # docker compose run --rm train
   train:
     build:
@@ -170,7 +166,7 @@ services:
       postgres:
         condition: service_healthy
 
-  # -------------------------------------------------------------- airflow --
+  #  airflow
   airflow:
     build:
       context: ./airflow
