@@ -1,0 +1,16 @@
+# secrets / local config
+.env
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+
+# IDE
+.idea/
+
+# OS
+.DS_Store
+
+# local mlflow/airflow runtime state (not the code, just data)
+mlruns/
